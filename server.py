@@ -66,5 +66,9 @@ def advice_plan(topic: str) -> str:
 
 
 if __name__ == "__main__":
-    print("MCP Server 啟動中... http://localhost:8000")
-    mcp.run(transport="sse")
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--stdio":
+        mcp.run(transport="stdio")
+    else:
+        print("MCP Server 啟動中... http://localhost:8000")
+        mcp.run(transport="sse")
