@@ -77,6 +77,7 @@ python agent.py
 ### Agent 對話截圖
 
 > 貼上 Agent 對話的截圖（顯示 Gemini 呼叫 Tool 的過程，以及使用 /use 呼叫 Prompt 的結果）
+<img width="974" height="848" alt="image" src="https://github.com/user-attachments/assets/a3234ea1-394e-4d9b-90c0-4dcbfac42bf0" />
 
 ---
 
