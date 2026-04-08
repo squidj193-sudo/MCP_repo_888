@@ -94,6 +94,33 @@ def get_advice_tips() -> str:
     )
 
 
+@mcp.resource("info://travel-tips")
+def get_travel_tips() -> str:
+    """旅行必帶物品與注意事項清單"""
+    return (
+        "旅行必帶物品：\n"
+        "- 護照 / 身分證\n"
+        "- 當地貨幣或信用卡\n"
+        "- 備用藥品\n"
+        "- 充電器與轉接頭\n\n"
+        "出發前注意：\n"
+        "- 確認當地天氣，準備適當衣物\n"
+        "- 查詢當地緊急電話\n"
+        "- 備份重要文件"
+    )
+
+
+@mcp.resource("info://search-guide")
+def get_search_guide() -> str:
+    """如何更有效率地使用 DuckDuckGo 搜尋"""
+    return (
+        "搜尋小秘訣：\n"
+        "- 使用引號 '...' 搜尋精確詞組\n"
+        "- 使用 site:website.com 限制搜尋範圍\n"
+        "- 嘗試使用不同的關鍵字組合來獲得更多結果"
+    )
+
+
 # ════════════════════════════════
 #  Prompt：整合多個 Tool 的提示詞模板
 #  使用者透過 /use <名稱> [參數] 呼叫
@@ -108,6 +135,31 @@ def advice_plan(topic: str) -> str:
         f"2. 把這則英文建議翻譯成繁體中文\n"
         f"3. 結合這則建議，寫出 3 個可以應用在 {topic} 上的具體行動方案\n"
         f"請用繁體中文回答且語氣要溫暖幽默。"
+    )
+
+
+@mcp.prompt()
+def plan_trip(city: str) -> str:
+    """產生旅遊行前規劃的提示詞"""
+    return (
+        f"我要去 {city} 旅行，請幫我準備一份完整的旅遊指南：\n"
+        f"1. 先使用 get_weather 查詢 {city} 的即時天氣\n"
+        f"2. 使用 search_duckduckgo 搜尋 {city} 的 3 個熱門景點與美食\n"
+        f"3. 使用 get_advice 取得一則隨機建議作為我的『旅行錦囊』\n"
+        f"4. 請根據以上資訊，規劃一份 1 天的行程建議，並提醒需要帶的衣物。\n"
+        f"請全程使用繁體中文回答。"
+    )
+
+
+@mcp.prompt()
+def explore_topic(topic: str) -> str:
+    """深入探索一個主題的提示詞"""
+    return (
+        f"我想要深入了解關於 {topic} 的資訊：\n"
+        f"1. 使用 search_duckduckgo 搜尋關於 {topic} 的最新發展或相關背景\n"
+        f"2. 總結搜尋結果中最關鍵的 3 個重點\n"
+        f"3. 如果這是一個生活上的課題，請使用 get_advice 給我一則建議\n"
+        f"請以條列式方式回答，並確保資訊來源可靠。"
     )
 
 
