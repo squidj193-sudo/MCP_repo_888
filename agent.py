@@ -11,7 +11,8 @@ load_dotenv()
 # Gemini API 設定
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-2.0-flash-exp"
+# 使用最新支援 Tool Use 的模型
+MODEL_ID = "gemini-2.5-flash"
 
 async def main():
     if not GEMINI_API_KEY:
@@ -25,14 +26,14 @@ async def main():
         async with ClientSession(read, write) as session:
             await session.initialize()
             
-            # 1. 獲取工具並轉換為 Gemini Tools
+            # 1. 獲取初始工具清單
             tools_resp = await session.list_tools()
+            print(f"已連接！可用工具：{[t.name for t in tools_resp.tools]}")
             
-            gemini_tools = []
+            # 將 MCP 工具轉換為 Gemini 的 FunctionDeclaration
+            function_declarations = []
             if tools_resp.tools:
-                function_declarations = []
                 for tool in tools_resp.tools:
-                    # 將 MCP 的 inputSchema (JSON Schema) 轉為 Gemini 格式
                     function_declarations.append(
                         types.FunctionDeclaration(
                             name=tool.name,
@@ -40,85 +41,106 @@ async def main():
                             parameters=tool.inputSchema
                         )
                     )
-                gemini_tools.append(types.Tool(function_declarations=function_declarations))
-
-            print(f"已連接！伺服器名稱: {session.server_capabilities}")
-            print(f"可用工具：{[t.name for t in tools_resp.tools]}")
             
-            # 2. 開始對話
-            # 建立 chat session，關閉自動執行工具 (因為我們要透過 MCP session 執行)
-            chat = client.chats.create(
-                model=MODEL_ID, 
-                config=types.GenerateContentConfig(
-                    tools=gemini_tools,
-                )
+            # 配置 Gemini 工具
+            config = types.GenerateContentConfig(
+                tools=[types.Tool(function_declarations=function_declarations)] if function_declarations else []
             )
+            chat = client.chats.create(model=MODEL_ID, config=config)
             
             print("\n=== Gemini MCP Agent 已就緒 ===")
-            print("輸入 'exit' 或 'quit' 結束對話。")
+            print("可用指令：")
+            print(" - /tools     : 列出可用工具")
+            print(" - /resources : 列出可用資源")
+            print(" - /prompts   : 列出可用提示詞模板")
+            print(" - /read <uri>: 讀取資源內容")
+            print(" - /use <name> [參數]: 使用提示詞模板")
+            print(" - 直接輸入文字與 Agent 對話，輸入 'exit' 結束。")
             
             while True:
-                user_input = input("\n你：")
-                if not user_input.strip():
-                    continue
-                if user_input.lower() in ["exit", "quit"]:
-                    break
-                
                 try:
-                    # 發送訊息
+                    user_input = input("\n你：").strip()
+                    if not user_input: continue
+                    if user_input.lower() in ["exit", "quit"]: break
+                    
+                    # 處理互動指令
+                    if user_input.startswith("/"):
+                        cmd_parts = user_input.split(" ", 2)
+                        cmd = cmd_parts[0].lower()
+                        
+                        if cmd == "/tools":
+                            tl = await session.list_tools()
+                            print("\n[可用工具]")
+                            for t in tl.tools: print(f"- {t.name}: {t.description}")
+                            continue
+                        elif cmd == "/resources":
+                            rl = await session.list_resources()
+                            print("\n[可用資源]")
+                            for r in rl.resources: print(f"- {r.uri}: {r.name}")
+                            continue
+                        elif cmd == "/prompts":
+                            pl = await session.list_prompts()
+                            print("\n[可用提示詞模板]")
+                            for p in pl.prompts: print(f"- {p.name}: {p.description}")
+                            continue
+                        elif cmd == "/read":
+                            if len(cmd_parts) < 2: 
+                                print("用法: /read <uri>")
+                                continue
+                            res = await session.read_resource(cmd_parts[1])
+                            print(f"\n--- 內容 [{cmd_parts[1]}] ---")
+                            for c in res.contents: print(c.text)
+                            print("--------------------------")
+                            continue
+                        elif cmd == "/use":
+                            if len(cmd_parts) < 2:
+                                print("用法: /use <name> [參數]")
+                                continue
+                            p_name = cmd_parts[1]
+                            p_args = {"city": cmd_parts[2], "topic": cmd_parts[2]} if len(cmd_parts) == 3 else {}
+                            pr = await session.get_prompt(p_name, p_args)
+                            user_input = "".join([m.content.text for m in pr.messages if m.content.type == "text"])
+                            print(f"DEBUG: 載入模板內容...\n")
+
+                    # 發送訊息至 Gemini 並處理 Tool Calling
                     response = chat.send_message(user_input)
                     
                     while True:
-                        # 檢查是否有 function call
-                        # 舊版 SDK 可能在 parts[0]，新版 SDK 在候選人中
-                        has_fc = False
+                        parts = []
+                        found_fc = False
+                        
                         if response.candidates and response.candidates[0].content.parts:
                             for part in response.candidates[0].content.parts:
                                 if part.function_call:
-                                    has_fc = True
+                                    found_fc = True
                                     name = part.function_call.name
                                     args = part.function_call.args
                                     
-                                    print(f"DEBUG: 呼叫工具 [{name}] 參數: {args}")
-                                    
-                                    # 透過 MCP 呼叫工具
+                                    print(f" -> 🤖 執行工具: {name}({args})")
                                     try:
-                                        tool_result = await session.call_tool(name, args)
-                                        result_content = ""
-                                        for content in tool_result.content:
-                                            if content.type == "text":
-                                                result_content += content.text
-                                        
-                                        print(f"DEBUG: 工具回傳結果: {result_content[:100]}...")
-                                        
-                                        # 將結果送回 Gemini
-                                        response = chat.send_message(
-                                            types.Part.from_function_response(
-                                                name=name,
-                                                response={'result': result_content}
-                                            )
-                                        )
-                                    except Exception as tool_err:
-                                        print(f"工具執行失敗: {tool_err}")
-                                        response = chat.send_message(
-                                            types.Part.from_function_response(
-                                                name=name,
-                                                response={'error': str(tool_err)}
-                                            )
-                                        )
+                                        result = await session.call_tool(name, args)
+                                        text_res = "\n".join([c.text for c in result.content if c.type == "text"])
+                                        parts.append(types.Part.from_function_response(
+                                            name=name, response={"result": text_res}
+                                        ))
+                                    except Exception as err:
+                                        parts.append(types.Part.from_function_response(
+                                            name=name, response={"error": str(err)}
+                                        ))
                         
-                        if not has_fc:
+                        if not found_fc:
+                            if response.text:
+                                print(f"\nAgent：{response.text}")
                             break
-                    
-                    # 顯示最終回答
-                    if response.text:
-                        print(f"\nAgent：{response.text}")
-                        
+                        else:
+                            # 將工具結果回傳給模型以獲得最終答案
+                            response = chat.send_message(parts)
+
                 except Exception as e:
-                    print(f"對話發生錯誤：{e}")
+                    print(f"對話錯誤: {e}")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n用戶終止。")
+        print("\n對話終止。")
