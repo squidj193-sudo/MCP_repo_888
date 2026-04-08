@@ -1,38 +1,124 @@
-"""
-W8 分組實作：MCP Client + Gemini Agent
-
-這個檔案用 AI 產生。請把以下設計指令貼給你的 AI 工具（Copilot / Antigravity），
-讓它幫你產生完整的程式碼：
-
-────────────────────────────────────────────
-設計指令（複製貼給 AI）：
-
-幫我寫一個 Python Agent，需求如下：
-
-1. 用 MCP SSE Client 連接到 http://localhost:8000/sse
-   （server.py 已在另一個終端機獨立執行）
-2. 連接後，自動取得 Server 提供的所有工具清單（list_tools）
-3. 把工具清單轉換成 Gemini API 的 function declaration 格式
-4. 使用 Gemini 2.0 Flash（免費版），進行多輪對話
-5. 當 Gemini 回傳 function_call 時：
-   - 透過 MCP call_tool 呼叫對應的 Tool
-   - 把結果送回 Gemini 繼續對話
-6. 當 Gemini 回傳文字時，直接顯示給使用者
-7. 需要的套件：google-genai、mcp、python-dotenv
-8. API Key 從 .env 的 GEMINI_API_KEY 讀取
-9. 用 asyncio 執行（因為 MCP Client 是非同步的）
-10. 加上 debug 輸出，顯示 Agent 呼叫了哪個工具和結果
-
-MCP SSE Client 的連接方式：
+import asyncio
+import os
+import json
+from dotenv import load_dotenv
 from mcp.client.sse import sse_client
-async with sse_client("http://localhost:8000/sse") as (read, write):
-    ...
-────────────────────────────────────────────
+from google import genai
+from google.genai import types
 
-啟動方式：
-  終端機 1：python server.py   （先啟動 Server）
-  終端機 2：python agent.py    （再啟動 Agent）
-"""
+load_dotenv()
 
-# TODO：把上面的設計指令貼給 AI，用產生的程式碼取代這段
-print("請用 AI 產生這個檔案的程式碼。設計指令在檔案上方的註解中。")
+# Gemini API 設定
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_ID = "gemini-2.0-flash-exp"
+
+async def main():
+    if not GEMINI_API_KEY:
+        print("請在 .env 檔案中設定 GEMINI_API_KEY")
+        return
+
+    print("正在連線到 MCP Server...")
+    # 使用 sse_client 連接
+    async with sse_client("http://localhost:8000/sse") as (read, write):
+        from mcp import ClientSession
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            
+            # 1. 獲取工具並轉換為 Gemini Tools
+            tools_resp = await session.list_tools()
+            
+            gemini_tools = []
+            if tools_resp.tools:
+                function_declarations = []
+                for tool in tools_resp.tools:
+                    # 將 MCP 的 inputSchema (JSON Schema) 轉為 Gemini 格式
+                    function_declarations.append(
+                        types.FunctionDeclaration(
+                            name=tool.name,
+                            description=tool.description,
+                            parameters=tool.inputSchema
+                        )
+                    )
+                gemini_tools.append(types.Tool(function_declarations=function_declarations))
+
+            print(f"已連接！伺服器名稱: {session.server_capabilities}")
+            print(f"可用工具：{[t.name for t in tools_resp.tools]}")
+            
+            # 2. 開始對話
+            # 建立 chat session，關閉自動執行工具 (因為我們要透過 MCP session 執行)
+            chat = client.chats.create(
+                model=MODEL_ID, 
+                config=types.GenerateContentConfig(
+                    tools=gemini_tools,
+                )
+            )
+            
+            print("\n=== Gemini MCP Agent 已就緒 ===")
+            print("輸入 'exit' 或 'quit' 結束對話。")
+            
+            while True:
+                user_input = input("\n你：")
+                if not user_input.strip():
+                    continue
+                if user_input.lower() in ["exit", "quit"]:
+                    break
+                
+                try:
+                    # 發送訊息
+                    response = chat.send_message(user_input)
+                    
+                    while True:
+                        # 檢查是否有 function call
+                        # 舊版 SDK 可能在 parts[0]，新版 SDK 在候選人中
+                        has_fc = False
+                        if response.candidates and response.candidates[0].content.parts:
+                            for part in response.candidates[0].content.parts:
+                                if part.function_call:
+                                    has_fc = True
+                                    name = part.function_call.name
+                                    args = part.function_call.args
+                                    
+                                    print(f"DEBUG: 呼叫工具 [{name}] 參數: {args}")
+                                    
+                                    # 透過 MCP 呼叫工具
+                                    try:
+                                        tool_result = await session.call_tool(name, args)
+                                        result_content = ""
+                                        for content in tool_result.content:
+                                            if content.type == "text":
+                                                result_content += content.text
+                                        
+                                        print(f"DEBUG: 工具回傳結果: {result_content[:100]}...")
+                                        
+                                        # 將結果送回 Gemini
+                                        response = chat.send_message(
+                                            types.Part.from_function_response(
+                                                name=name,
+                                                response={'result': result_content}
+                                            )
+                                        )
+                                    except Exception as tool_err:
+                                        print(f"工具執行失敗: {tool_err}")
+                                        response = chat.send_message(
+                                            types.Part.from_function_response(
+                                                name=name,
+                                                response={'error': str(tool_err)}
+                                            )
+                                        )
+                        
+                        if not has_fc:
+                            break
+                    
+                    # 顯示最終回答
+                    if response.text:
+                        print(f"\nAgent：{response.text}")
+                        
+                except Exception as e:
+                    print(f"對話發生錯誤：{e}")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n用戶終止。")
