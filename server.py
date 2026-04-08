@@ -9,8 +9,10 @@ W8 分組實作：MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
+from ddgs import DDGS
+import requests
 
-mcp = FastMCP("第X組-server")
+mcp = FastMCP("第8組-server")
 
 
 # ════════════════════════════════
@@ -24,6 +26,50 @@ def get_advice() -> str:
     """取得一則隨機建議。
     當使用者需要生活建議或尋求解惑時使用。"""
     return get_advice_data()
+
+
+@mcp.tool()
+def search_duckduckgo(query: str) -> str:
+    """使用 DuckDuckGo 搜尋資訊。可以用來搜尋景點、美食或其他即時資訊。
+    例如：搜尋「台北 景點」或「台中 美食」。"""
+    with DDGS() as ddgs:
+        results = ddgs.text(query, max_results=5)
+        if not results:
+            return "找不到相關結果。"
+        
+        output = []
+        for r in results:
+            output.append(f"標題: {r['title']}\n內容: {r['body']}\n連結: {r['href']}")
+        
+        return "\n\n---\n\n".join(output)
+import requests
+
+@mcp.tool()
+def get_weather(city: str) -> str:
+    """取得指定城市的即時天氣資訊。
+    當使用者詢問天氣、溫度、降雨機率、或是是否該出門/帶傘時使用。"""
+    try:
+        # 直接在 Server 中實作呼叫 wttr.in API
+        url = f"https://wttr.in/{city}?format=j1"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        
+        data = resp.json()
+        current = data['current_condition'][0]
+        temp_c = current['temp_C']
+        desc = current['weatherDesc'][0]['value']
+        humidity = current['humidity']
+        feels_like = current['FeelsLikeC']
+        
+        return (
+            f"📍 城市：{city}\n"
+            f"🌡️ 目前溫度：{temp_c}°C (體感：{feels_like}°C)\n"
+            f"☁️ 天氣狀況：{desc}\n"
+            f"💧 濕度：{humidity}%\n"
+            f"--- 資料來源：wttr.in ---"
+        )
+    except Exception as e:
+        return f"無法取得 {city} 的天氣資訊。錯誤：{str(e)}"
 
 
 @mcp.tool()
