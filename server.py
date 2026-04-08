@@ -19,6 +19,13 @@ mcp = FastMCP("第8組-server")
 #  Tools：各組員各自負責一個 Tool
 # ════════════════════════════════
 
+from tools.advice_tool import get_advice_data
+
+@mcp.tool()
+def get_advice() -> str:
+    """取得一則隨機建議。
+    當使用者需要生活建議或尋求解惑時使用。"""
+    return get_advice_data()
 
 
 @mcp.tool()
@@ -76,17 +83,15 @@ def hello(name: str) -> str:
 #  URI 格式：info://名稱 或 docs://名稱
 # ════════════════════════════════
 
-# 範例（替換成符合你們主題的內容）：
-#
-# @mcp.resource("info://tips")
-# def get_tips() -> str:
-#     """（主題）的實用小提示"""
-#     return (
-#         "實用小提示：\n"
-#         "- 提示 1\n"
-#         "- 提示 2\n"
-#         "- 提示 3"
-#     )
+@mcp.resource("info://advice-tips")
+def get_advice_tips() -> str:
+    """關於尋求建議的提示"""
+    return (
+        "實用小提示：\n"
+        "- 保持開放的心態來面對建議\n"
+        "- 每則建議都可能有它背後的智慧\n"
+        "- 也可以多試著詢問不同的人事物"
+    )
 
 
 # ════════════════════════════════
@@ -94,20 +99,22 @@ def hello(name: str) -> str:
 #  使用者透過 /use <名稱> [參數] 呼叫
 # ════════════════════════════════
 
-# 範例（替換成符合你們主題的內容）：
-#
-# @mcp.prompt()
-# def my_plan(topic: str) -> str:
-#     """產生（主題）計畫的提示詞"""
-#     return (
-#         f"請幫我規劃關於 {topic} 的計畫：\n"
-#         f"1. 先使用相關工具取得資訊\n"
-#         f"2. 根據資訊提供 3 個具體建議\n"
-#         f"3. 附上一則笑話或建議讓我開心\n"
-#         f"請用繁體中文回答。"
-#     )
+@mcp.prompt()
+def advice_plan(topic: str) -> str:
+    """產生針對特定主題獲取建議的提示詞"""
+    return (
+        f"請幫我針對 {topic} 給予一些啟發：\n"
+        f"1. 先使用 get_advice 工具取得一則隨機的英文建議\n"
+        f"2. 把這則英文建議翻譯成繁體中文\n"
+        f"3. 結合這則建議，寫出 3 個可以應用在 {topic} 上的具體行動方案\n"
+        f"請用繁體中文回答且語氣要溫暖幽默。"
+    )
 
 
 if __name__ == "__main__":
-    print("MCP Server 啟動中... http://localhost:8000")
-    mcp.run(transport="sse")
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--stdio":
+        mcp.run(transport="stdio")
+    else:
+        print("MCP Server 啟動中... http://localhost:8000")
+        mcp.run(transport="sse")
