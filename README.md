@@ -11,9 +11,9 @@
 
 | Tool 名稱                 | 功能說明     | 負責組員 |
 | ------------------------- | ------------ | -------- |
-| （範例：`get_weather`） | 查詢即時天氣 |          |
-|                           |              |          |
-|                           |              |          |
+| get_weather | 查詢即時天氣 |  吳東霖 |
+|  web_search   |  搜尋景點、美食  |  江庭翔 |
+| get_advice  | 旅行前的人生建議 |  葉書愷  |
 
 ---
 
@@ -21,10 +21,10 @@
 
 | 姓名 | 負責功能            | 檔案          | 使用的 API |
 | ---- | ------------------- | ------------- | ---------- |
-|      |                     | `tools/`    |            |
-|      |                     | `tools/`    |            |
-|      |                     | `tools/`    |            |
-|      | Resource + Prompt   | `server.py` | —         |
+| 吳東霖 | 查詢即時天氣  | `tools/`    |  wttr.in  |
+| 江庭翔 | 搜尋景點、美食 | `tools/`    |  DuckDuckGo Search  |
+| 葉書愷 | 旅行前的人生建議 | `tools/`    |  Advice Slip  |
+| 黃元稜 | Resource + Prompt   | `server.py` | —         |
 |      | Agent（用 AI 產生） | `agent.py`  | Gemini API |
 
 ---
