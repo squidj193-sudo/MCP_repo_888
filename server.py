@@ -9,22 +9,32 @@ W8 分組實作：MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
+from ddgs import DDGS
+import requests
 
-mcp = FastMCP("第X組-server")
+mcp = FastMCP("第8組-server")
 
 
 # ════════════════════════════════
 #  Tools：各組員各自負責一個 Tool
 # ════════════════════════════════
 
-# 範例（替換成你們自己的 Tool）：
-# from tools.weather_tool import get_weather_data
-#
-# @mcp.tool()
-# def get_weather(city: str) -> str:
-#     """取得指定城市的即時天氣資訊。
-#     當使用者詢問天氣、溫度、是否該帶傘時使用。"""
-#     return get_weather_data(city)
+
+
+@mcp.tool()
+def search_duckduckgo(query: str) -> str:
+    """使用 DuckDuckGo 搜尋資訊。可以用來搜尋景點、美食或其他即時資訊。
+    例如：搜尋「台北 景點」或「台中 美食」。"""
+    with DDGS() as ddgs:
+        results = ddgs.text(query, max_results=5)
+        if not results:
+            return "找不到相關結果。"
+        
+        output = []
+        for r in results:
+            output.append(f"標題: {r['title']}\n內容: {r['body']}\n連結: {r['href']}")
+        
+        return "\n\n---\n\n".join(output)
 
 
 @mcp.tool()
